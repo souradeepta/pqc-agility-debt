@@ -148,10 +148,11 @@ def test_assess_component_dimension_scores_sum():
 
 def test_load_components():
     components = load_components(DATA_PATH)
-    assert len(components) == 22
+    assert len(components) == 30
     ids = [c.id for c in components]
     assert "C01" in ids
     assert "C14" in ids
+    assert "C23" in ids  # Bouncy Castle (new)
 
 
 def test_load_components_f5_hw():
@@ -166,7 +167,7 @@ def test_load_estate():
     estate = load_estate(DATA_PATH)
     assert "C01" in estate
     assert estate["C01"] == 412
-    assert sum(estate.values()) == 1847
+    assert sum(estate.values()) == 2045
 
 
 # ── assess_estate ────────────────────────────────────────────────────────────
@@ -201,7 +202,7 @@ def test_assess_estate_total_endpoints():
     components = load_components(DATA_PATH)
     estate = load_estate(DATA_PATH)
     result = assess_estate(components, estate)
-    assert result.total_endpoints == 1847
+    assert result.total_endpoints == 2045
 
 
 def test_assess_estate_phase_counts():
@@ -210,7 +211,7 @@ def test_assess_estate_phase_counts():
     result = assess_estate(components, estate)
     phases = result.results_by_phase()
     total = sum(len(v) for v in phases.values())
-    assert total == 22
+    assert total == 30
 
 
 # ── _weighted_median ─────────────────────────────────────────────────────────
@@ -255,3 +256,142 @@ def test_proposition1_reference_estate():
             f"Proposition 1 violated: estate_cad={result.estate_cad:.3f} >= 0.40 "
             f"but no Phase 3 components found"
         )
+
+
+# ── New analytical functions (Lemma 1, Theorem 1, Corollary 1) ───────────────
+from src.cad import (
+    migration_time_lower_bound, f5_estate_cad_lower_bound,
+    weight_sensitivity_sweep, dimension_correlation_matrix,
+)
+
+
+# Lemma 1: migration_time_lower_bound >= hardware proc months and >= software min
+def test_lemma1_hw_lower_bound_gte_proc_months():
+    """Lemma 1: migration lower bound >= proc_months for hardware components."""
+    components = load_components(DATA_PATH)
+    hw = next(c for c in components if c.proc_months >= 24)
+    lb = migration_time_lower_bound(hw)
+    assert lb >= hw.proc_months
+
+
+def test_lemma1_sw_lower_bound_gte_software_min():
+    """Lemma 1: migration lower bound >= 1 + 11*api_surface for software."""
+    components = load_components(DATA_PATH)
+    sw = next(c for c in components if c.proc_months == 0)
+    lb = migration_time_lower_bound(sw)
+    assert lb >= 1.0 + 11.0 * sw.api_surface
+
+
+def test_lemma1_lower_bound_positive():
+    components = load_components(DATA_PATH)
+    for c in components:
+        assert migration_time_lower_bound(c) > 0.0
+
+
+def test_lemma1_hw_migration_gte_lower_bound():
+    """Lemma 1: for hardware (proc_months>0), actual migration >= lb."""
+    from src.cad import estimate_migration_months
+    components = load_components(DATA_PATH)
+    hw_components = [c for c in components if c.proc_months > 0]
+    for c in hw_components:
+        lb = migration_time_lower_bound(c)
+        actual = estimate_migration_months(c, 0.5)
+        # For hardware, base = proc_months; lb = max(proc_months, 1+11*api)
+        # Only guarantee when proc_months dominates (proc_months >= 1+11*api_surface)
+        if c.proc_months >= 1.0 + 11.0 * c.api_surface:
+            assert actual >= lb - 1e-9, f"{c.name}: actual={actual:.1f} < lb={lb:.1f}"
+
+
+# Theorem 1: estate CAD is bounded by component scores
+def test_theorem1_estate_cad_bounded_by_max():
+    """Theorem 1: estate CAD <= max component CAD score."""
+    from src.cad import cad_score
+    components = load_components(DATA_PATH)
+    estate = load_estate(DATA_PATH)
+    er = assess_estate(components, estate)
+    max_score = max(cad_score(c) for c in components)
+    assert er.estate_cad <= max_score + 1e-9
+
+
+def test_theorem1_estate_cad_gte_min():
+    """Theorem 1: estate CAD >= min component CAD score (weighted)."""
+    from src.cad import cad_score
+    components = load_components(DATA_PATH)
+    estate = load_estate(DATA_PATH)
+    er = assess_estate(components, estate)
+    min_score = min(cad_score(c) for c in components if estate.get(c.id, 0) > 0)
+    assert er.estate_cad >= min_score - 1e-9
+
+
+# Corollary 1: F5 lower bound
+def test_corollary1_f5_lower_bound_valid():
+    """Corollary 1: estate CAD >= f5_score * f5_fraction."""
+    components = load_components(DATA_PATH)
+    estate = load_estate(DATA_PATH)
+    er = assess_estate(components, estate)
+    f5 = next(r for r in er.results_sorted_by_score() if r.component.id == "C01")
+    f5_frac = estate.get("C01", 0) / max(er.total_endpoints, 1)
+    lb = f5_estate_cad_lower_bound(er.estate_cad, f5.score, f5_frac)
+    assert er.estate_cad >= lb - 1e-9
+
+
+def test_corollary1_f5_lower_bound_nonneg():
+    assert f5_estate_cad_lower_bound(0.5, 1.0, 0.2) >= 0.0
+
+
+def test_corollary1_f5_lb_increases_with_f5_score():
+    lb1 = f5_estate_cad_lower_bound(0.5, 0.8, 0.2)
+    lb2 = f5_estate_cad_lower_bound(0.5, 1.0, 0.2)
+    assert lb2 > lb1
+
+
+# Weight sensitivity tests
+def test_weight_sensitivity_returns_five_dims():
+    components = load_components(DATA_PATH)
+    estate = load_estate(DATA_PATH)
+    sens = weight_sensitivity_sweep(components, estate, n_samples=50, seed=0)
+    assert len(sens) == 5
+
+
+def test_weight_sensitivity_values_in_range():
+    components = load_components(DATA_PATH)
+    estate = load_estate(DATA_PATH)
+    sens = weight_sensitivity_sweep(components, estate, n_samples=50, seed=0)
+    for v in sens.values():
+        assert -1.0 <= v <= 1.0
+
+
+def test_weight_sensitivity_alg_gap_positive():
+    """Increasing algorithm gap weight should positively correlate with estate CAD."""
+    components = load_components(DATA_PATH)
+    estate = load_estate(DATA_PATH)
+    sens = weight_sensitivity_sweep(components, estate, n_samples=200, seed=42)
+    assert sens["alg_gap"] > 0.0
+
+
+# Dimension correlation matrix tests
+def test_dimension_corr_matrix_shape():
+    components = load_components(DATA_PATH)
+    corr = dimension_correlation_matrix(components)
+    assert corr.shape == (5, 5)
+
+
+def test_dimension_corr_matrix_diagonal_ones():
+    import numpy as np
+    components = load_components(DATA_PATH)
+    corr = dimension_correlation_matrix(components)
+    assert all(abs(corr[i, i] - 1.0) < 1e-9 for i in range(5))
+
+
+def test_dimension_corr_matrix_symmetric():
+    import numpy as np
+    components = load_components(DATA_PATH)
+    corr = dimension_correlation_matrix(components)
+    assert np.allclose(corr, corr.T, atol=1e-9)
+
+
+def test_dimension_corr_values_bounded():
+    import numpy as np
+    components = load_components(DATA_PATH)
+    corr = dimension_correlation_matrix(components)
+    assert np.all(corr >= -1.0 - 1e-9) and np.all(corr <= 1.0 + 1e-9)

@@ -6,24 +6,24 @@
     "cad_formula": "CAD(c) = w_alg*alg_gap + w_api*api_surface + w_key*key_constraints + w_comp*comp_overhead + w_proc*proc_months_normalized",
     "weights": {
       "w_alg": 0.25,
-      "w_api": 0.20,
+      "w_api": 0.2,
       "w_key": 0.15,
-      "w_comp": 0.20,
-      "w_proc": 0.20
+      "w_comp": 0.2,
+      "w_proc": 0.2
     },
     "proc_normalization_months": 36,
     "thresholds": {
-      "very_low":  0.20,
-      "low":       0.40,
-      "medium":    0.60,
-      "high":      0.80,
-      "very_high": 1.00
+      "very_low": 0.2,
+      "low": 0.4,
+      "medium": 0.6,
+      "high": 0.8,
+      "very_high": 1.0
     },
     "risk_tiers": {
       "critical": "Processes cardholder data or financial settlement; directly on critical path",
-      "high":     "Key management or TLS termination for production systems",
-      "medium":   "Internal services not directly in CDE",
-      "low":      "Non-production or indirect cryptographic role"
+      "high": "Key management or TLS termination for production systems",
+      "medium": "Internal services not directly in CDE",
+      "low": "Non-production or indirect cryptographic role"
     }
   },
   "components": [
@@ -356,11 +356,131 @@
       "risk_tier": "medium",
       "notes": "Spring Security 6.x + JDK 24 enables PQC TLS. Dependency upgrade; full test suite required.",
       "source": "Spring Security 6.4 release notes; Spring PQC issue tracker"
+    },
+    {
+      "id": "C23",
+      "name": "Bouncy Castle (Java/C# Crypto Library)",
+      "category": "Cryptographic Library",
+      "vendor": "Legion of the Bouncy Castle",
+      "pqc_support": "partial",
+      "alg_gap": 0.3,
+      "api_surface": 0.4,
+      "key_constraints": 0.2,
+      "comp_overhead": 0.2,
+      "proc_months": 0,
+      "risk_tier": "medium",
+      "notes": "Bouncy Castle 1.77+ includes ML-KEM/ML-DSA beta. API changes needed for PQC algorithms.",
+      "source": "Bouncy Castle changelog 2024; NIST FIPS 203/204 tracking issue"
+    },
+    {
+      "id": "C24",
+      "name": "BoringSSL (Google TLS Library)",
+      "category": "Cryptographic Library",
+      "vendor": "Google",
+      "pqc_support": "partial",
+      "alg_gap": 0.35,
+      "api_surface": 0.3,
+      "key_constraints": 0.15,
+      "comp_overhead": 0.15,
+      "proc_months": 0,
+      "risk_tier": "medium",
+      "notes": "BoringSSL has X25519Kyber768 hybrid TLS deployed in Chrome. Full FIPS-validated PQC pending.",
+      "source": "Google Security Blog 2023; BoringSSL GitHub hybrid KEM support"
+    },
+    {
+      "id": "C25",
+      "name": "IBM z/OS Cryptographic Services (CPACF)",
+      "category": "Hardware Security Module",
+      "vendor": "IBM",
+      "pqc_support": "none",
+      "alg_gap": 0.9,
+      "api_surface": 0.95,
+      "key_constraints": 0.9,
+      "comp_overhead": 1.0,
+      "proc_months": 36,
+      "risk_tier": "critical",
+      "notes": "IBM z/OS CPACF hardware acceleration is classical-only. PQC requires z16 Telum II upgrade (2025+ timeline). Mainframe replacement cycle is 5-7 years.",
+      "source": "IBM z/OS Cryptography documentation 2024; IBM z16 PQC announcement"
+    },
+    {
+      "id": "C26",
+      "name": "Venafi Trust Protection Platform",
+      "category": "Certificate Lifecycle Manager",
+      "vendor": "Venafi / CyberArk",
+      "pqc_support": "partial",
+      "alg_gap": 0.5,
+      "api_surface": 0.6,
+      "key_constraints": 0.4,
+      "comp_overhead": 0.7,
+      "proc_months": 6,
+      "risk_tier": "high",
+      "notes": "Venafi TPP v22+ supports certificate issuance workflow but lacks ML-KEM key discovery. PQC cert lifecycle enforcement requires policy engine update.",
+      "source": "Venafi PQC readiness white paper 2024; Venafi TPP release notes"
+    },
+    {
+      "id": "C27",
+      "name": "AWS CloudHSM",
+      "category": "Hardware Security Module",
+      "vendor": "Amazon Web Services",
+      "pqc_support": "none",
+      "alg_gap": 0.8,
+      "api_surface": 0.7,
+      "key_constraints": 0.75,
+      "comp_overhead": 0.6,
+      "proc_months": 12,
+      "risk_tier": "high",
+      "notes": "AWS CloudHSM uses FIPS 140-2 L3 validated classical HSM. No PQC roadmap announced as of 2024. Replacement requires AWS managed service transition.",
+      "source": "AWS CloudHSM product page; AWS re:Invent 2023 cryptography session"
+    },
+    {
+      "id": "C28",
+      "name": "Keyfactor EJBCA Cloud",
+      "category": "Certificate Authority",
+      "vendor": "Keyfactor",
+      "pqc_support": "partial",
+      "alg_gap": 0.4,
+      "api_surface": 0.45,
+      "key_constraints": 0.3,
+      "comp_overhead": 0.5,
+      "proc_months": 3,
+      "risk_tier": "medium",
+      "notes": "Keyfactor EJBCA 8.0 adds experimental ML-DSA certificate issuance. Full production PQC support targeted for 2025.",
+      "source": "Keyfactor PQC roadmap 2024; EJBCA 8.0 release notes"
+    },
+    {
+      "id": "C29",
+      "name": "AWS Private CA",
+      "category": "Certificate Authority",
+      "vendor": "Amazon Web Services",
+      "pqc_support": "none",
+      "alg_gap": 0.6,
+      "api_surface": 0.55,
+      "key_constraints": 0.5,
+      "comp_overhead": 0.45,
+      "proc_months": 0,
+      "risk_tier": "medium",
+      "notes": "AWS Private CA (ACM PCA) supports RSA and ECC only. No PQC algorithm support announced. Software-based, so migration is API-change only.",
+      "source": "AWS Private CA documentation 2024; AWS cryptography roadmap"
+    },
+    {
+      "id": "C30",
+      "name": "Kubernetes cert-manager",
+      "category": "Certificate Lifecycle Manager",
+      "vendor": "cert-manager (CNCF)",
+      "pqc_support": "none",
+      "alg_gap": 0.55,
+      "api_surface": 0.5,
+      "key_constraints": 0.3,
+      "comp_overhead": 0.25,
+      "proc_months": 0,
+      "risk_tier": "low",
+      "notes": "cert-manager 1.14 supports ACME with RSA/ECC. PQC support depends on upstream issuer (EJBCA/ACME server) adding PQC; cert-manager itself is API-agnostic.",
+      "source": "cert-manager documentation v1.14; CNCF TOC review 2024"
     }
   ],
   "sifi_estate": {
     "description": "Simulated SIFI-scale deployment based on typical large bank infrastructure patterns",
-    "total_cryptographic_endpoints": 1847,
+    "total_cryptographic_endpoints": 2045,
     "distribution": {
       "C01": 412,
       "C02": 48,
@@ -383,7 +503,15 @@
       "C19": 14,
       "C20": 43,
       "C21": 22,
-      "C22": 14
+      "C22": 14,
+      "C23": 45,
+      "C24": 30,
+      "C25": 18,
+      "C26": 12,
+      "C27": 22,
+      "C28": 8,
+      "C29": 35,
+      "C30": 28
     },
     "notes": "F5 BIG-IP hardware (C01) dominates at 22.3% of cryptographic endpoints. OpenSSL (C14) and Java JDK (C15) together represent 26.6% but have the lowest CAD."
   }

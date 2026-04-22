@@ -227,3 +227,80 @@ def _weighted_median(values: List[float], weights: List[int]) -> float:
         if cumulative >= total / 2:
             return val
     return pairs[-1][0]
+
+
+def weight_sensitivity_sweep(
+    components: List[Component],
+    estate: Dict[str, int],
+    n_samples: int = 1000,
+    seed: int = 42,
+) -> Dict[str, float]:
+    """
+    Monte Carlo sensitivity: sample Dirichlet weight vectors, return std dev of
+    estate CAD across samples for each dimension.  Larger std = more sensitive.
+
+    Returns dict: dimension_name -> std_dev_of_estate_cad_when_that_dim_is_varied.
+    """
+    import numpy as np
+    rng = np.random.default_rng(seed)
+    dims = ["w_alg", "w_api", "w_key", "w_comp", "w_proc"]
+    dim_names = ["alg_gap", "api_surface", "key_constraints", "comp_overhead", "proc_delay"]
+
+    estate_cads = []
+    for _ in range(n_samples):
+        alpha = rng.dirichlet(np.ones(5))
+        w = CADWeights(**dict(zip(dims, alpha)))
+        er = assess_estate(components, estate, w)
+        estate_cads.append(er.estate_cad)
+
+    estate_cads = np.array(estate_cads)
+
+    # Compute correlation between each dimension's alpha values and resulting CAD
+    result = {}
+    # Re-sample with tracking to get per-dim correlation
+    samples_by_dim = {d: [] for d in dims}
+    cads = []
+    for _ in range(n_samples):
+        alpha = rng.dirichlet(np.ones(5))
+        for i, d in enumerate(dims):
+            samples_by_dim[d].append(alpha[i])
+        w = CADWeights(**dict(zip(dims, alpha)))
+        er = assess_estate(components, estate, w)
+        cads.append(er.estate_cad)
+    cads = np.array(cads)
+    for d, dname in zip(dims, dim_names):
+        weights_arr = np.array(samples_by_dim[d])
+        corr = float(np.corrcoef(weights_arr, cads)[0, 1])
+        result[dname] = corr
+
+    return result
+
+
+def dimension_correlation_matrix(components: List[Component]) -> "np.ndarray":
+    """
+    Pearson correlation matrix of [alg_gap, api_surface, key_constraints,
+    comp_overhead, proc_normalized] across all components.
+    """
+    import numpy as np
+    matrix = np.array([
+        [c.alg_gap, c.api_surface, c.key_constraints, c.comp_overhead,
+         min(c.proc_months / PROC_NORMALIZATION_MONTHS, 1.0)]
+        for c in components
+    ])
+    return np.corrcoef(matrix.T)
+
+
+def migration_time_lower_bound(c: Component) -> float:
+    """
+    Lemma 1 lower bound: migration time >= max(proc_months, 1+11*api_surface).
+    """
+    software_min = 1.0 + 11.0 * c.api_surface
+    return max(float(c.proc_months), software_min)
+
+
+def f5_estate_cad_lower_bound(estate_cad: float, f5_score: float, f5_fraction: float) -> float:
+    """
+    Corollary 1: estate CAD >= f5_score * f5_fraction.
+    Since F5 BIG-IP hardware dominates the estate.
+    """
+    return f5_score * f5_fraction

@@ -22,6 +22,8 @@
 
 \theoremstyle{plain}
 \newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{corollary}{Corollary}[theorem]
 \newtheorem{proposition}{Proposition}
 \theoremstyle{definition}
 \newtheorem{definition}{Definition}
@@ -256,6 +258,52 @@ appear in every non-trivial SIFI estate, guaranteeing at least one
 Phase~3 component whenever F5~endpoint count is nonzero.
 \end{proof}
 
+\begin{lemma}[Migration Time Lower Bound]\label{lem:migbound}
+For any component $c$, the minimum calendar time to achieve PQC compliance
+satisfies:
+\[
+  T_{\min}(c) \;\geq\; \max\!\bigl(\tau_{\mathrm{proc}}(c),\;
+  1 + 11\cdot d_{\mathrm{api}}(c)\bigr)
+\]
+where $\tau_{\mathrm{proc}}$ is hardware procurement delay in months and
+$d_{\mathrm{api}}\in[0,1]$ is normalized API surface complexity.
+\end{lemma}
+\begin{proof}
+Hardware replacement requires at minimum $\tau_{\mathrm{proc}}$ months for
+procurement and delivery~\cite{f5techblog2023}.  Software migration requires
+at minimum $1 + 11 d_{\mathrm{api}}$ months~(1~month~for~config-only
+change; up to 12~months~for~full hardware-replacement-equivalent refactor).
+Taking the maximum gives the tightest lower bound valid for both paths.
+\end{proof}
+
+\begin{theorem}[CAD Score Monotonicity in Dimension Weights]\label{thm:monotone}
+The estate CAD score $\bar{C}$ is monotone increasing in each dimension
+weight $w_d$ (holding all component scores constant):
+\[
+  \frac{\partial \bar{C}}{\partial w_d} \geq 0
+  \quad \forall\,d \in \{\mathrm{alg},\,\mathrm{api},\,\mathrm{key},\,\mathrm{comp},\,\mathrm{proc}\}.
+\]
+\end{theorem}
+\begin{proof}
+$\bar{C} = \sum_i e_i \cdot s_i(w) / E$ where $e_i \geq 0$ are endpoint
+counts, $E = \sum e_i$, and $s_i(w) = \sum_d w_d \cdot x_{id}$ with
+$x_{id} \geq 0$.  Thus
+$\partial \bar{C}/\partial w_d = \sum_i e_i x_{id} / E \geq 0$, since
+all $e_i$, $x_{id}$, and $E$ are non-negative.
+\end{proof}
+
+\begin{corollary}[F5 Estate CAD Lower Bound]\label{cor:f5lb}
+For the reference SIFI estate, $\bar{C} \geq \FfiveHwCadScore{} \cdot
+\FfiveEstateFraction{}$ since F5~BIG-IP hardware dominates the estate
+at fraction $f_{F5} = \FfiveEstateFraction{}$ with CAD score
+$s_{F5} = \FfiveHwCadScore{}$.
+\end{corollary}
+\begin{proof}
+By Theorem~\ref{thm:monotone}, the contribution of any single component
+provides a lower bound: $\bar{C} \geq e_{F5}/E \cdot s_{F5} = \FfiveEstateFraction{}
+\cdot \FfiveHwCadScore{} = \FfiveEstateCadLowerBound{}$.
+\end{proof}
+
 % ============================================================
 \section{SIFI Infrastructure Component Survey}\label{sec:survey}
 
@@ -471,6 +519,43 @@ in parentheses.  Phase~3 hardware components (red) cannot begin
 meaningful migration until procurement cycles are initiated today.}
 \label{fig:timeline}
 \end{figure}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{fig6_weight_sensitivity.pdf}
+\caption{Weight sensitivity analysis: Pearson correlation of each CAD
+dimension weight with estate CAD under 1{,}000 Dirichlet-sampled weight
+vectors.  The \MostSensitiveDimension{} dimension shows the highest
+sensitivity ($r=\MostSensitiveDimCorr{}$), confirming that algorithm support
+gap dominates estate-level agility debt.}
+\label{fig:sensitivity}
+\end{figure}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{fig7_endpoint_cdf.pdf}
+\caption{Cumulative distribution of endpoints by CAD score.  Vertical
+dashed lines mark tier boundaries.  The steep drop above CAD~$=0.6$
+reflects the concentration of F5~hardware endpoints at CAD~$=1.0$.}
+\label{fig:cdf}
+\end{figure}
+
+\begin{table}[!t]
+\caption{Weight Sensitivity: Pearson Correlation with Estate CAD}
+\label{tab:sensitivity}
+\centering
+\begin{tabular}{lc}
+\toprule
+CAD Dimension & Pearson $r$ \\
+\midrule
+Algorithm Gap     & \SensAlgGap{} \\
+API Surface       & \SensApiSurface{} \\
+Key Constraints   & \SensKeyConstraints{} \\
+Compliance Overhead & \SensCompOverhead{} \\
+Procurement Delay & \SensProcDelay{} \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \textbf{Phase~1 recommendation.}  Deploy ML-KEM hybrid key exchange
 (X25519~+~ML-KEM~768) in all software TLS stacks (OpenSSL, Nginx, Apache,

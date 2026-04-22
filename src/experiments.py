@@ -8,7 +8,8 @@ from pathlib import Path
 
 from .cad import (
     CADWeights, assess_estate, load_components, load_estate, cad_tier,
-    PHASE_WINDOWS,
+    PHASE_WINDOWS, weight_sensitivity_sweep, dimension_correlation_matrix,
+    migration_time_lower_bound, f5_estate_cad_lower_bound,
 )
 from .figures.fig2_cad_distribution import plot_cad_distribution
 from .figures.fig3_dimension_radar import plot_dimension_radar
@@ -53,6 +54,24 @@ def run_experiments(data_dir: Path, results_dir: Path) -> None:
     plot_dimension_radar(results_sorted, results_dir / "fig3_dimension_radar.pdf")
     plot_risk_cad_matrix(results_sorted, estate, results_dir / "fig4_risk_cad_matrix.pdf")
     plot_migration_timeline(estate_result, results_dir / "fig5_migration_timeline.pdf")
+
+    # Weight sensitivity and dimension correlation
+    print("Computing weight sensitivity sweep (1000 samples)...")
+    sensitivity = weight_sensitivity_sweep(components, estate, n_samples=1000, seed=42)
+    corr_matrix = dimension_correlation_matrix(components)
+
+    try:
+        from .figures.fig6_weight_sensitivity import plot_weight_sensitivity
+        plot_weight_sensitivity(sensitivity, results_dir / "fig6_weight_sensitivity.pdf")
+    except Exception as e:
+        print(f"fig6 skipped: {e}")
+
+    try:
+        from .figures.fig7_endpoint_cdf import plot_endpoint_cdf
+        plot_endpoint_cdf(results_sorted, estate, results_dir / "fig7_endpoint_cdf.pdf")
+    except Exception as e:
+        print(f"fig7 skipped: {e}")
+
     print("Figures generated.")
 
     # ── summary stats ────────────────────────────────────────────────────────
@@ -139,6 +158,42 @@ def run_experiments(data_dir: Path, results_dir: Path) -> None:
     )
     macros["NumHighBurden"] = str(high_burden)
     macros["HighBurdenEndpointPct"] = f"{100 * high_burden_eps / estate_result.total_endpoints:.1f}"
+
+    # Weight sensitivity macros
+    dim_macro_map = {
+        "alg_gap":         "SensAlgGap",
+        "api_surface":     "SensApiSurface",
+        "key_constraints": "SensKeyConstraints",
+        "comp_overhead":   "SensCompOverhead",
+        "proc_delay":      "SensProcDelay",
+    }
+    for dim, macro in dim_macro_map.items():
+        macros[macro] = f"{sensitivity.get(dim, 0.0):.3f}"
+
+    # F5 lower bound (Corollary 1)
+    f5_hw = next(r for r in results_sorted if r.component.id == "C01")
+    f5_frac = estate.get("C01", 0) / max(estate_result.total_endpoints, 1)
+    lb = f5_estate_cad_lower_bound(estate_result.estate_cad, f5_hw.score, f5_frac)
+    macros["FfiveEstateCadLowerBound"] = f"{lb:.3f}"
+    macros["FfiveEstateFraction"] = f"{f5_frac:.3f}"
+
+    # Migration lower bounds for top 3 components
+    for rank, r in enumerate(results_sorted[:3], 1):
+        rank_str = ["One", "Two", "Three"][rank - 1]
+        lb_months = migration_time_lower_bound(r.component)
+        macros[f"TopRankMigLowerBound{rank_str}"] = f"{lb_months:.0f}"
+        macros[f"TopRankComponent{rank_str}"] = r.component.name
+        macros[f"TopRankCad{rank_str}"] = f"{r.score:.3f}"
+
+    # New component stats
+    macros["NumComponentsNew"] = str(len(components) - 22)
+    macros["TotalEndpointsNew"] = str(estate_result.total_endpoints)
+
+    # Dimension correlation extremes
+    dim_names = ["alg_gap", "api_surface", "key_constraints", "comp_overhead", "proc_delay"]
+    max_corr_dim = max(sensitivity, key=lambda d: abs(sensitivity[d]))
+    macros["MostSensitiveDimension"] = max_corr_dim.replace("_", " ").title()
+    macros["MostSensitiveDimCorr"] = f"{sensitivity[max_corr_dim]:.3f}"
 
     tex = "\n".join(
         f"\\newcommand{{\\{k}}}{{{v}}}"
